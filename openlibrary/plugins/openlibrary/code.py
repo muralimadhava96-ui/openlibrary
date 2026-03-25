@@ -20,7 +20,6 @@ import web
 import yaml
 
 import infogami
-from infogami.utils import i18n, macro, template
 from openlibrary.core import db
 from openlibrary.core.batch_imports import (
     batch_import,
@@ -40,7 +39,7 @@ if not hasattr(infogami.config, 'features'):
 import openlibrary.core.stats
 from infogami.core.db import ValidationException
 from infogami.infobase import client
-from infogami.utils import delegate, features
+from infogami.utils import delegate, features, i18n, macro, template
 from infogami.utils.app import metapage
 from infogami.utils.view import (
     add_flash_message,
@@ -295,7 +294,7 @@ class widget(delegate.page):
     path = r'(/works/OL\d+W|/books/OL\d+M)/widget'
 
     def GET(self, key: str):  # type: ignore[override]
-        olid = key.rsplit('/', maxsplit=1)[-1]
+        olid = key.rsplit('/', 1)[-1]
         item = web.ctx.site.get(key)
         is_work = key.startswith('/works/')
         item['olid'] = olid
@@ -1233,6 +1232,68 @@ class memory(delegate.page):
 def is_bot():
     """Check if the current request is from a bot."""
     return req_context.get().is_bot
+
+
+def is_recognized_bot():
+    return req_context.get().is_recognized_bot
+
+
+def is_suspicious_visitor():
+    """Check if the current visitor is suspicious and needs human verification.
+
+    A suspicious visitor is someone who is NOT:
+    1. a recognized bot
+    2. coming from a referer
+    3. carrying a valid signed verification cookie
+    4. logged in
+
+    Returns:
+        bool: True if visitor is suspicious and needs verification, False otherwise
+    """
+    # Check if it's a known bot
+    if is_recognized_bot():
+        return False
+
+    # Check if there's a referer header
+    if web.ctx.env.get('HTTP_REFERER'):
+        return False
+
+    # Check if visitor has a valid signed verification cookie
+    from openlibrary.accounts.model import verify_verification_cookie
+
+    cookie_value = web.cookies().get('vf')
+    if cookie_value and verify_verification_cookie(cookie_value):
+        return False
+
+    # Check if user is logged in
+    try:
+        if web.ctx.site.get_user():
+            return False
+    except AttributeError:
+        pass
+    return True
+
+
+def require_human_verification():
+    """Redirect to the human verification challenge page."""
+    # Track verification challenge shown
+    openlibrary.core.stats.increment('ol.stats.verify_human.challenge_shown')
+
+    next_url = web.ctx.env.get('REQUEST_URI', web.ctx.path)
+    raise web.seeother('/verify_human?next=' + web.urlquote(next_url))
+
+
+class verify_human_page(delegate.page):
+    """Renders the human verification challenge page."""
+
+    path = "/verify_human"
+
+    def GET(self):
+        next_url = web.input(next='/').next
+        # Only allow same-origin redirects
+        if not next_url.startswith('/') or next_url.startswith('//'):
+            next_url = '/'
+        return render_template('verify_human', next_url=next_url)
 
 
 def setup_template_globals():

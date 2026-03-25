@@ -747,6 +747,16 @@ class search(delegate.page):
         if 'isbn' in i:
             self.isbn_redirect(i.isbn)
 
+        # Check if this is an expensive search that requires human verification
+        if self._is_expensive_search(i):
+            from openlibrary.plugins.openlibrary.code import (
+                is_suspicious_visitor,
+                require_human_verification,
+            )
+
+            if is_suspicious_visitor():
+                return require_human_verification()
+
         q_list = []
         if q := i.get('q', '').strip():
             m = re_olid.match(q)
@@ -822,6 +832,47 @@ class search(delegate.page):
             page,
             rows,
         )
+
+    def _is_expensive_search(self, i):
+        """Check if this is an expensive search query that requires verification.
+
+        Expensive queries include:
+        - Any Solr field syntax (field:value)
+        - Wildcard queries (* or ?)
+        - Boolean operators (AND, OR, NOT)
+        - Range queries ([...] or {...})
+        - Language filter param
+
+        Args:
+            i: Web input object with search parameters
+
+        Returns:
+            bool: True if this is an expensive search, False otherwise
+        """
+        import re
+
+        q = i.get('q', '').strip()
+        if not q:
+            return False
+
+        # Solr field syntax: word followed by colon
+        if re.search(r'\w+:', q):
+            return True
+
+        # Wildcards
+        if '*' in q or '?' in q:
+            return True
+
+        # Boolean operators (whole words)
+        if re.search(r'\b(AND|OR|NOT)\b', q):
+            return True
+
+        # Range queries
+        if re.search(r'[\[{][^\]]*(?:TO)[^\]]*[\]}]', q):
+            return True
+
+        # language filter param (separate from q)
+        return bool(i.get('language'))
 
 
 def works_by_author(

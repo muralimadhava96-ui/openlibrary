@@ -30,6 +30,14 @@ class index2(delegate.page):
     path = "/recentchanges"
 
     def GET(self):
+        from openlibrary.plugins.openlibrary.code import (
+            is_suspicious_visitor,
+            require_human_verification,
+        )
+
+        if is_suspicious_visitor():
+            return require_human_verification()
+
         if features.is_enabled("recentchanges_v2"):
             return index().render()
         else:
@@ -43,6 +51,14 @@ class index(delegate.page):
         return features.is_enabled("recentchanges_v2")
 
     def GET(self, kind):
+        from openlibrary.plugins.openlibrary.code import (
+            is_suspicious_visitor,
+            require_human_verification,
+        )
+
+        if is_suspicious_visitor():
+            return require_human_verification()
+
         return self.render(kind=kind)
 
     def render(self, date=None, kind=None):
@@ -203,6 +219,14 @@ class recentchanges_view(delegate.page):
 
 class history(delegate.mode):
     def GET(self, path):
+        from openlibrary.plugins.openlibrary.code import (
+            is_suspicious_visitor,
+            require_human_verification,
+        )
+
+        if is_suspicious_visitor():
+            return require_human_verification()
+
         page = web.ctx.site.get(path)
         if not page:
             raise web.seeother(path)
